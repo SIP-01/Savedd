@@ -11,8 +11,9 @@
  *   2. Set the non-secret vars below (OWNER_PUBKEY enables the Admin → AI tab)
  *   3. wrangler deploy
  *
- * Secrets (OPENAI_API_KEY, BRAVE_API_KEY) must NEVER appear in this file,
- * in "vars", or anywhere in the repo — only in the Worker secret store.
+ * Secrets (OPENAI_API_KEY, BRAVE_API_KEY, XAI_API_KEY) must NEVER appear in
+ * this file, in "vars", or anywhere in the repo — only in the Worker secret
+ * store.
  *
  * Optional — admin-UI-managed config (write the key from the Admin tab
  * instead of env vars): create a KV namespace and uncomment the binding:
@@ -41,5 +42,18 @@
   }
   // "kv_namespaces": [
   //   { "binding": "AI_CONFIG_KV", "id": "<paste-id-from-wrangler-kv-namespace-create>" }
+  // ]
+  //
+  // ─── "A Peaceful Goodbye" (memorial video generation) ───
+  //   1. wrangler secret put XAI_API_KEY        ← xAI (Grok Imagine) key, never committed
+  //   2. wrangler kv namespace create HOMEGOING_JOBS
+  //   3. wrangler r2 bucket create savedd-homegoing
+  //   4. Uncomment the bindings below and paste the KV id.
+  // Without these, /goodbye renders but generation returns 503 — forks stay functional.
+  // "kv_namespaces": [
+  //   { "binding": "HOMEGOING_JOBS", "id": "<paste-id>" }
+  // ],
+  // "r2_buckets": [
+  //   { "binding": "HOMEGOING_BUCKET", "bucket_name": "savedd-homegoing" }
   // ]
 }

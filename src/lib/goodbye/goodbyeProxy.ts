@@ -1,0 +1,370 @@
+/**
+ * Homegoing video generation — shared worker logic.
+ *
+ * Testable-without-a-server pieces of the "A Peaceful Goodbye" backend.
+ * `worker.ts` is a thin HTTP shell over these functions.
+ *
+ * Flow:
+ *   1. POST /api/goodbye/generate (multipart: photos + JSON fields)
+ *      → validate, store reference photos in R2, build the fixed-story
+ *      prompt, submit reference-to-video to xAI, persist job in KV.
+ *   2. GET  /api/goodbye/status/:id (client polls every few seconds)
+ *      → lazily advances the xAI job: one status call upstream per poll;
+ *      when xAI reports "done" the temporary video URL is downloaded
+ *      immediately into R2 (xAI URLs expire) and the job flips to done.
+ *   3. GET  /api/goodbye/:id/video   → stream the stored mp4 from R2.
+ *   4. GET  /api/goodbye/:id/meta    → public share-page metadata from KV.
+ *   5. GET  /api/goodbye/:id/ref/:n  → reference photos for xAI to fetch.
+ *
+ * Security invariants:
+ *   - XAI_API_KEY is read from env only, injected server-side, never
+ *     logged and never present in any response body.
+ *   - Upstream xAI error bodies are drained without being read — they can
+ *     echo request details (including the prompt) and must not leak.
+ *   - Photos are stored under the random job id; nothing is addressable
+ *     by user-supplied names.
+ *   - Video bytes are capped while downloading so a hostile or broken
+ *     upstream cannot exhaust worker memory.
+ */
+import {
+  HOMEGOING_MODEL,
+  HOMEGOING_RESOLUTION,
+  buildHomegoingPrompt,
+  validateHomegoingInput,
+  type HomegoingInput,
+  type HomegoingJob,
+  type HomegoingMeta,
+} from './homegoing';
+
+/** Minimal KV surface with TTL support (Cloudflare KV compatible). */
+export interface HomegoingKVLike {
+  get(key: string): Promise<string | null>;
+  put(key: string, value: string, options?: { expirationTtl?: number }): Promise<unknown>;
+}
+
+/** Minimal R2 surface the worker needs (Cloudflare R2 compatible). */
+export interface HomegoingR2Like {
+  put(
+    key: string,
+    value: ArrayBuffer | Uint8Array,
+    options?: { httpMetadata?: { contentType?: string } },
+  ): Promise<unknown>;
+  get(key: string): Promise<HomegoingR2ObjectLike | null>;
+}
+
+export interface HomegoingR2ObjectLike {
+  body: ReadableStream<Uint8Array>;
+  writeHttpMetadata(headers: Headers): void;
+}
+
+export interface HomegoingEnv {
+  /** wrangler secret — xAI API key. */
+  XAI_API_KEY?: string;
+  /** KV binding for job records. */
+  HOMEGOING_JOBS?: HomegoingKVLike;
+  /** R2 binding for reference photos + finished videos. */
+  HOMEGOING_BUCKET?: HomegoingR2Like;
+  /** Optional var override, defaults to https://api.x.ai/v1. */
+  XAI_API_ENDPOINT?: string;
+}
+
+/** True when the feature is fully configured on this deployment. */
+export function homegoingConfigured(env: HomegoingEnv): boolean {
+  return Boolean(env.XAI_API_KEY?.trim() && env.HOMEGOING_JOBS && env.HOMEGOING_BUCKET);
+}
+
+const MAX_PHOTOS = 6;
+const MAX_PHOTO_BYTES = 10 * 1024 * 1024; // 10 MB each
+const MAX_VIDEO_BYTES = 64 * 1024 * 1024; // cap download from upstream
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const JOB_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
+const XAI_TIMEOUT_MS = 30_000;
+
+function endpoint(env: HomegoingEnv): string {
+  return (env.XAI_API_ENDPOINT?.trim() || 'https://api.x.ai/v1').replace(/\/$/, '');
+}
+
+function isJobId(id: string): boolean {
+  return /^[0-9a-f-]{36}$/i.test(id);
+}
+
+/**
+ * Parse and validate the multipart generate request.
+ * Returns { input, photos, departedCount } or an error string.
+ */
+export async function parseGenerateRequest(
+  request: Request,
+): Promise<{ input: HomegoingInput; photos: File[]; departedCount: number } | string> {
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch {
+    return 'Request must be multipart/form-data';
+  }
+
+  const fieldsRaw = form.get('fields');
+  if (typeof fieldsRaw !== 'string') return 'Missing "fields" JSON part';
+
+  let fieldsJson: unknown;
+  try {
+    fieldsJson = JSON.parse(fieldsRaw);
+  } catch {
+    return '"fields" must be valid JSON';
+  }
+
+  const input = validateHomegoingInput(fieldsJson);
+  if (typeof input === 'string') return input;
+
+  const departed = form.getAll('departedPhotos').filter((v): v is File => v instanceof File);
+  const family = form.getAll('familyPhotos').filter((v): v is File => v instanceof File);
+  const photos = [...departed, ...family];
+
+  if (departed.length < 1) return 'Please add at least one photo of the person who has passed.';
+  if (family.length < 1) return 'Please add at least one photo of the family.';
+  if (photos.length > MAX_PHOTOS) return `At most ${MAX_PHOTOS} photos in total.`;
+
+  for (const photo of photos) {
+    if (!ALLOWED_IMAGE_TYPES.has(photo.type)) return 'Photos must be JPEG, PNG, or WebP.';
+    if (photo.size > MAX_PHOTO_BYTES) return 'Each photo must be under 10 MB.';
+    if (photo.size === 0) return 'One of the photos is empty.';
+  }
+
+  return { input, photos, departedCount: departed.length };
+}
+
+/** Extension for a stored reference photo. */
+function photoExt(type: string): string {
+  return type === 'image/png' ? 'png' : type === 'image/webp' ? 'webp' : 'jpg';
+}
+
+/**
+ * Submit a generation: store photos, build prompt, call xAI, persist job.
+ * Returns the created job (check job.status — submission failures are
+ * reported on the job rather than thrown).
+ */
+export async function startGeneration(
+  env: HomegoingEnv,
+  input: HomegoingInput,
+  photos: File[],
+  departedCount: number,
+  origin: string,
+): Promise<HomegoingJob> {
+  const id = crypto.randomUUID();
+  const bucket = env.HOMEGOING_BUCKET!;
+
+  // Store reference photos; xAI fetches them back from our public URLs.
+  const referenceUrls: string[] = [];
+  for (let i = 0; i < photos.length; i++) {
+    const key = `homegoing/${id}/ref-${i}.${photoExt(photos[i].type)}`;
+    await bucket.put(key, await photos[i].arrayBuffer(), {
+      httpMetadata: { contentType: photos[i].type },
+    });
+    referenceUrls.push(`${origin}/api/goodbye/${id}/ref/${i}`);
+  }
+
+  const prompt = buildHomegoingPrompt(input, departedCount, photos.length - departedCount);
+
+  const meta: HomegoingMeta = {
+    id,
+    departedName: input.departedName,
+    departedRelationship: input.departedRelationship,
+    aspectRatio: input.aspectRatio,
+    duration: input.duration,
+    createdAt: Date.now(),
+  };
+
+  const job: HomegoingJob = {
+    id,
+    status: 'pending',
+    meta,
+    prompt,
+    createdAt: Date.now(),
+  };
+
+  const submitted = await fetch(`${endpoint(env)}/videos/generations`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${env.XAI_API_KEY!.trim()}`,
+    },
+    body: JSON.stringify({
+      model: HOMEGOING_MODEL,
+      prompt,
+      reference_images: referenceUrls,
+      duration: input.duration,
+      aspect_ratio: input.aspectRatio,
+      resolution: HOMEGOING_RESOLUTION,
+    }),
+    signal: AbortSignal.timeout(XAI_TIMEOUT_MS),
+  }).catch(() => null);
+
+  if (!submitted) {
+    job.status = 'failed';
+    job.error = 'The video service is unreachable right now — please try again shortly.';
+  } else if (!submitted.ok) {
+    await submitted.body?.cancel().catch(() => undefined);
+    job.status = 'failed';
+    job.error =
+      submitted.status === 429
+        ? 'The video service is busy — please try again in a minute.'
+        : submitted.status === 402
+          ? 'Video generation is temporarily unavailable.'
+          : 'The video service rejected the request. Try simpler wording in the description.';
+  } else {
+    const data = (await submitted.json()) as { request_id?: string };
+    if (typeof data.request_id === 'string' && data.request_id) {
+      job.requestId = data.request_id;
+      job.status = 'processing';
+    } else {
+      job.status = 'failed';
+      job.error = 'The video service returned an unexpected response.';
+    }
+  }
+
+  await env.HOMEGOING_JOBS!.put(`job:${id}`, JSON.stringify(job), {
+    expirationTtl: JOB_TTL_SECONDS,
+  });
+  return job;
+}
+
+export async function readJob(env: HomegoingEnv, id: string): Promise<HomegoingJob | null> {
+  if (!isJobId(id)) return null;
+  const raw = await env.HOMEGOING_JOBS!.get(`job:${id}`);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as HomegoingJob;
+  } catch {
+    return null;
+  }
+}
+
+async function writeJob(env: HomegoingEnv, job: HomegoingJob): Promise<void> {
+  await env.HOMEGOING_JOBS!.put(`job:${job.id}`, JSON.stringify(job), {
+    expirationTtl: JOB_TTL_SECONDS,
+  });
+}
+
+/**
+ * Advance a processing job by polling xAI once. When the upstream video is
+ * ready it is downloaded into R2 immediately (xAI URLs are temporary) and
+ * the job flips to done. Returns the (possibly updated) job.
+ */
+export async function advanceJob(env: HomegoingEnv, job: HomegoingJob): Promise<HomegoingJob> {
+  if (job.status !== 'processing' || !job.requestId) return job;
+
+  const res = await fetch(`${endpoint(env)}/videos/${job.requestId}`, {
+    headers: { Authorization: `Bearer ${env.XAI_API_KEY!.trim()}` },
+    signal: AbortSignal.timeout(XAI_TIMEOUT_MS),
+  }).catch(() => null);
+
+  if (!res) return job; // transient — try again on the next poll
+
+  if (!res.ok) {
+    await res.body?.cancel().catch(() => undefined);
+    job.status = 'failed';
+    job.error = 'The video service reported a problem while generating.';
+    await writeJob(env, job);
+    return job;
+  }
+
+  const data = (await res.json()) as {
+    status?: string;
+    video?: { url?: string };
+  };
+
+  if (data.status === 'failed' || data.status === 'expired') {
+    job.status = 'failed';
+    job.error = 'This generation did not complete — please create another version.';
+    await writeJob(env, job);
+    return job;
+  }
+
+  if (data.status !== 'done' || !data.video?.url) return job; // still pending
+
+  // Download immediately — the xAI URL expires.
+  const video = await fetch(data.video.url, { signal: AbortSignal.timeout(120_000) }).catch(
+    () => null,
+  );
+  if (!video || !video.ok || !video.body) {
+    await video?.body?.cancel().catch(() => undefined);
+    return job; // retry on next poll while the URL is still fresh
+  }
+
+  const bytes = await readCapped(video.body, MAX_VIDEO_BYTES);
+  if (!bytes) {
+    job.status = 'failed';
+    job.error = 'The generated video could not be saved — please create another version.';
+    await writeJob(env, job);
+    return job;
+  }
+
+  await env.HOMEGOING_BUCKET!.put(`homegoing/${job.id}/video.mp4`, bytes, {
+    httpMetadata: { contentType: 'video/mp4' },
+  });
+
+  job.status = 'done';
+  job.videoPath = `/api/goodbye/${job.id}/video`;
+  await writeJob(env, job);
+  return job;
+}
+
+/** Read a stream into memory with a hard cap; null when exceeded. */
+async function readCapped(
+  body: ReadableStream<Uint8Array>,
+  cap: number,
+): Promise<Uint8Array | null> {
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > cap) {
+      await reader.cancel().catch(() => undefined);
+      return null;
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
+}
+
+/** Serve a stored object (reference photo or finished video) from R2. */
+export async function serveStored(
+  env: HomegoingEnv,
+  id: string,
+  key: string,
+): Promise<Response | null> {
+  if (!isJobId(id)) return null;
+  if (!/^[a-z0-9.-]+$/i.test(key)) return null;
+  const object = await env.HOMEGOING_BUCKET!.get(`homegoing/${id}/${key}`);
+  if (!object) return null;
+
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set(
+    'Cache-Control',
+    key === 'video.mp4' ? 'public, max-age=31536000, immutable' : 'private, no-store',
+  );
+  return new Response(object.body, { headers });
+}
+
+/** Public metadata for the share page (no prompt, no internals). */
+export function publicMeta(job: HomegoingJob): Record<string, unknown> {
+  return {
+    id: job.id,
+    status: job.status,
+    departedName: job.meta.departedName,
+    departedRelationship: job.meta.departedRelationship,
+    aspectRatio: job.meta.aspectRatio,
+    duration: job.meta.duration,
+    createdAt: job.meta.createdAt,
+    videoUrl: job.status === 'done' ? job.videoPath : undefined,
+  };
+}
