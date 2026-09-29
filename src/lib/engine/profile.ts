@@ -234,8 +234,12 @@ export const SAVEDD_PROFILE: CommunityEngineProfile = {
       hidden: ['all', 'nostr', 'wiki', 'news', 'code', 'tor', 'i2p'],
       defaultTab: 'web',
     },
-    navLinks: [{ to: '/about', label: 'About' }],
+    navLinks: [
+      { to: '/goodbye', label: 'A Peaceful Goodbye' },
+      { to: '/about', label: 'About' },
+    ],
     footerLinks: [
+      { to: '/goodbye', label: 'A Peaceful Goodbye' },
       { to: '/about', label: 'About' },
       { to: '/partners', label: 'Invite friends' },
       { to: '/settings', label: 'Settings' },
