@@ -19,8 +19,9 @@
  * Security invariants:
  *   - XAI_API_KEY is read from env only, injected server-side, never
  *     logged and never present in any response body.
- *   - Upstream xAI error bodies are drained without being read — they can
- *     echo request details (including the prompt) and must not leak.
+ *   - Upstream xAI error bodies are read only through readErrorSnippet,
+ *     which strips the prompt and API key before storing a short snippet
+ *     in the server-side job record (never sent to clients).
  *   - Photos are stored under the random job id; nothing is addressable
  *     by user-supplied names.
  *   - Video bytes are capped while downloading so a hostile or broken
@@ -190,7 +191,8 @@ export async function startGeneration(
     body: JSON.stringify({
       model: HOMEGOING_MODEL,
       prompt,
-      reference_images: referenceUrls,
+      // xAI expects ImageUrl structs, not bare strings (422 otherwise).
+      reference_images: referenceUrls.map((url) => ({ url })),
       duration: input.duration,
       aspect_ratio: input.aspectRatio,
       resolution: HOMEGOING_RESOLUTION,
@@ -202,14 +204,21 @@ export async function startGeneration(
     job.status = 'failed';
     job.error = 'The video service is unreachable right now — please try again shortly.';
   } else if (!submitted.ok) {
-    await submitted.body?.cancel().catch(() => undefined);
+    // Read a small redacted snippet of the upstream error for diagnosis.
+    // The prompt and API key are stripped before anything is stored, and
+    // the snippet never leaves the server-side job record verbatim unless
+    // an operator reads it from KV — public clients only get the friendly
+    // message below plus the upstream status code.
+    const upstreamStatus = submitted.status;
+    job.debug = await readErrorSnippet(submitted, prompt, env.XAI_API_KEY ?? '');
     job.status = 'failed';
-    job.error =
-      submitted.status === 429
+    const friendly =
+      upstreamStatus === 429
         ? 'The video service is busy — please try again in a minute.'
-        : submitted.status === 402
+        : upstreamStatus === 402
           ? 'Video generation is temporarily unavailable.'
           : 'The video service rejected the request. Try simpler wording in the description.';
+    job.error = `${friendly} (upstream ${upstreamStatus})`;
   } else {
     const data = (await submitted.json()) as { request_id?: string };
     if (typeof data.request_id === 'string' && data.request_id) {
@@ -308,6 +317,23 @@ export async function advanceJob(env: HomegoingEnv, job: HomegoingJob): Promise<
   return job;
 }
 
+/**
+ * Read at most `max` chars of an upstream error body with the prompt and
+ * API key redacted, so operators can see *why* xAI rejected a submission
+ * without secrets or user text ever landing in logs/KV.
+ */
+async function readErrorSnippet(res: Response, prompt: string, apiKey: string, max = 300): Promise<string> {
+  try {
+    let text = await res.text();
+    if (prompt) text = text.split(prompt).join('[prompt]');
+    const key = apiKey.trim();
+    if (key) text = text.split(key).join('[key]');
+    return text.replace(/\s+/g, ' ').trim().slice(0, max);
+  } catch {
+    return '';
+  }
+}
+
 /** Read a stream into memory with a hard cap; null when exceeded. */
 async function readCapped(
   body: ReadableStream<Uint8Array>,
@@ -366,5 +392,6 @@ export function publicMeta(job: HomegoingJob): Record<string, unknown> {
     duration: job.meta.duration,
     createdAt: job.meta.createdAt,
     videoUrl: job.status === 'done' ? job.videoPath : undefined,
+    error: job.status === 'failed' && job.error ? { message: job.error } : undefined,
   };
 }
