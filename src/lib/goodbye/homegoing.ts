@@ -221,6 +221,8 @@ export interface HomegoingJob {
   /** Public path of the stored video once done, e.g. /api/goodbye/<id>/video */
   videoPath?: string;
   error?: string;
+  /** Redacted upstream error snippet for operator debugging (never sent to clients). */
+  debug?: string;
   meta: HomegoingMeta;
   prompt: string;
   createdAt: number;
