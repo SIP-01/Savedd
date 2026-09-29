@@ -22,6 +22,8 @@ import ProtocolSip02 from "./pages/ProtocolSip02";
 import CommunityPage from "./pages/Community";
 import DashboardPage from "./pages/Dashboard";
 import DocsPage from "./pages/Docs";
+import Goodbye from "./pages/Goodbye";
+import GoodbyeShare from "./pages/GoodbyeShare";
 import { NIP19Page } from "./pages/NIP19Page";
 import NotFound from "./pages/NotFound";
 
@@ -50,6 +52,9 @@ export function AppRouter() {
         <Route path="/community" element={<CommunityPage />} />
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/docs" element={<DocsPage />} />
+        {/* "A Peaceful Goodbye" — memorial video wizard + public share page */}
+        <Route path="/goodbye" element={<Goodbye />} />
+        <Route path="/goodbye/:id" element={<GoodbyeShare />} />
         {/* Hidden owner console — not linked in any nav */}
         <Route path="/admin" element={<Admin />} />
         {/* Legacy: instance management moved into Settings */}
