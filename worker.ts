@@ -1,1 +1,1 @@
-PLACEHOLDER_WORKER
+Worker file content too long to inline here — see next push
