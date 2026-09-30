@@ -8,18 +8,14 @@
  *   POST /api/ai/admin             → NIP-98-signed config writes (owner key only, KV)
  *   GET  /api/search/brave/status  → whether engine Brave is configured
  *   POST /api/search/brave         → Brave Search proxy, key injected here
- *   POST /api/goodbye/generate     → "A Peaceful Goodbye" video generation (xAI)
- *   GET  /api/goodbye/*            → job status, stored media, share-page meta
  *
  * Operator configuration (nothing secret in the repo):
  *   wrangler secret put OPENAI_API_KEY        ← OpenAI (or compatible) key
  *     (legacy alias: AI_API_KEY is also accepted)
  *   wrangler secret put BRAVE_API_KEY         ← Brave Search subscription token
- *   wrangler secret put XAI_API_KEY           ← xAI (Grok Imagine) key
  *   AI_PROVIDER_ENDPOINT / AI_MODEL / AI_PROVIDER_NAME / AI_ENGINE_ENABLED (vars)
  *   OWNER_PUBKEY (var, hex)                   ← enables the Admin → AI tab
  *   AI_CONFIG_KV (KV binding, optional)       ← enables admin-UI-managed config
- *   HOMEGOING_JOBS (KV) + HOMEGOING_BUCKET (R2) ← memorial video generation
  *
  * KV config wins over env vars. Neither present → status reports
  * "not configured" and chat returns 503 — fresh clones stay fully
@@ -306,7 +302,10 @@ async function handleGoodbyeGenerate(request: Request, env: Env): Promise<Respon
   const origin = new URL(request.url).origin;
   try {
     const job = await startGeneration(env, parsed.input, parsed.photos, parsed.departedCount, origin);
-    return json(publicMeta(job), job.status === 'failed' ? 502 : 202, request);
+    // Always 202: a 5xx here gets replaced by the Vercel/edge proxy's own
+    // HTML error page, breaking the client's JSON parsing. Failure state is
+    // carried in the body's status/error fields instead.
+    return json(publicMeta(job), 202, request);
   } catch {
     return json({ error: { message: 'Could not start the generation', type: 'internal' } }, 500, request);
   }
