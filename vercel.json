@@ -3,6 +3,7 @@
   "rewrites": [
     { "source": "/api/(.*)", "destination": "https://savedd.savedd.workers.dev/api/$1" },
     { "source": "/goodbye/(.*)", "destination": "https://savedd.savedd.workers.dev/goodbye/$1" },
+    { "source": "/heaven/(.*)", "destination": "https://savedd.savedd.workers.dev/heaven/$1" },
     { "source": "/assets/(.*)", "destination": "/assets/$1" },
     { "source": "/((?!assets/|api/|favicon\\.svg|og\\.jpg|manifest\\.webmanifest|opensearch\\.xml|robots\\.txt|sitemap\\.xml|.*\\.(?:js|css|png|jpg|jpeg|webp|svg|ico|woff2?|map)).*)", "destination": "/index.html" }
   ],
