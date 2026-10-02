@@ -1,8 +1,8 @@
 /**
- * Share page for a finished "A Peaceful Goodbye" video.
+ * Share page for a finished "Heaven" memorial video.
  *
- * Public, no login. Fetches /api/goodbye/:id/meta and plays the stored
- * video; the worker injects OG/Twitter tags into this page's HTML so the
+ * Public, no login. Fetches /api/heaven/:id/meta and plays the video;
+ * the worker injects OG/Twitter tags into this page's HTML so the
  * link unfurls on social platforms. Every share button points at the
  * Savedd.com page URL (not the raw mp4) so shares drive awareness back
  * to the site and its "create your own" entry point.
@@ -34,11 +34,11 @@ const GoodbyeShare = () => {
   const [notFound, setNotFound] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const shareUrl = `https://savedd.com/goodbye/${id}`;
+  const shareUrl = `https://savedd.com/heaven/${id}`;
   const who = meta?.departedName || 'a loved one';
 
   useSeoMeta({
-    title: `A Peaceful Goodbye — for ${who} — Savedd.com`,
+    title: `Heaven — for ${who} — Savedd.com`,
     description: 'An imagined farewell. A picture of hope.',
   });
 
@@ -48,7 +48,7 @@ const GoodbyeShare = () => {
 
     const load = async () => {
       try {
-        const res = await fetch(`/api/goodbye/${id}/meta`);
+        const res = await fetch(`/api/heaven/${id}/meta`);
         if (res.status === 404) {
           if (!cancelled) setNotFound(true);
           return;
@@ -97,7 +97,7 @@ const GoodbyeShare = () => {
                 This tribute could not be found — it may have expired.
               </p>
               <Button asChild variant="outline" className="min-h-[44px]">
-                <Link to="/goodbye">Create your own</Link>
+                <Link to="/heaven">Create your own</Link>
               </Button>
             </CardContent>
           </Card>
@@ -116,7 +116,7 @@ const GoodbyeShare = () => {
                     This generation did not complete.
                   </p>
                   <Button asChild variant="outline" className="min-h-[44px]">
-                    <Link to="/goodbye">Create another version</Link>
+                    <Link to="/heaven">Create another version</Link>
                   </Button>
                 </>
               ) : (
@@ -133,7 +133,7 @@ const GoodbyeShare = () => {
           <div className="space-y-6">
             <div className="text-center space-y-1">
               <h1 className="text-2xl sm:text-3xl font-display font-semibold tracking-tight">
-                A Peaceful Goodbye
+                Heaven
               </h1>
               <p className="text-sm text-muted-foreground">
                 For {who} — an imagined tribute, a picture of hope.
@@ -222,7 +222,7 @@ const GoodbyeShare = () => {
                 “Seek, and ye shall find.”
               </p>
               <Button asChild className="min-h-[44px]">
-                <Link to="/goodbye">Create a tribute for someone you love</Link>
+                <Link to="/heaven">Create a tribute for someone you love</Link>
               </Button>
             </div>
           </div>
