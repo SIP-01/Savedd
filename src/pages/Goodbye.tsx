@@ -1,10 +1,10 @@
 /**
- * "A Peaceful Goodbye" — wizard.
+ * "Heaven" — memorial video wizard (formerly "A Peaceful Goodbye").
  *
  * Five gentle steps: who went home → who they are leaving → their world →
  * preview & consent → generating/result. Submitting posts a multipart form
- * to /api/goodbye/generate (photos + JSON fields); the worker handles the
- * Grok Imagine call and this page polls /api/goodbye/status/:id until the
+ * to /api/heaven/generate (photos + JSON fields); the worker handles the
+ * Grok Imagine call and this page polls /api/heaven/status/:id until the
  * video is ready, then sends the user to the share page.
  *
  * The same validation runs server-side — the checks here are only for a
@@ -149,7 +149,7 @@ const Goodbye = () => {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useSeoMeta({
-    title: 'A Peaceful Goodbye — Savedd.com',
+    title: 'Heaven — Savedd.com',
     description: 'An imagined farewell. Create a short, gentle video tribute of a loved one walking with Jesus toward heaven.',
   });
 
@@ -184,15 +184,16 @@ const Goodbye = () => {
   const startPolling = (id: string) => {
     pollRef.current = setInterval(async () => {
       try {
-        const res = await fetch(`/api/goodbye/status/${id}`);
+        const res = await fetch(`/api/heaven/status/${id}`);
         if (!res.ok) return;
-        const data = (await res.json()) as { status?: string; error?: string };
+        const data = (await res.json()) as { status?: string; error?: string | { message?: string } };
         if (data.status === 'done') {
           if (pollRef.current) clearInterval(pollRef.current);
-          navigate(`/goodbye/${id}`);
+          navigate(`/heaven/${id}`);
         } else if (data.status === 'failed') {
           if (pollRef.current) clearInterval(pollRef.current);
-          setJobError(data.error || 'This generation did not complete — please try again.');
+          const message = typeof data.error === 'string' ? data.error : data.error?.message;
+          setJobError(message || 'This generation did not complete — please try again.');
           setSubmitting(false);
           setStep(4);
         }
@@ -211,7 +212,7 @@ const Goodbye = () => {
       for (const photo of departedPhotos) form.append('departedPhotos', photo.file);
       for (const photo of familyPhotos) form.append('familyPhotos', photo.file);
 
-      const res = await fetch('/api/goodbye/generate', { method: 'POST', body: form });
+      const res = await fetch('/api/heaven/generate', { method: 'POST', body: form });
       const data = (await res.json()) as { id?: string; status?: string; error?: { message?: string } };
 
       if (!res.ok || !data.id) {
@@ -243,7 +244,7 @@ const Goodbye = () => {
             <Heart className="w-5 h-5 text-primary" />
           </div>
           <h1 className="text-2xl sm:text-3xl font-display font-semibold tracking-tight">
-            A Peaceful Goodbye
+            Heaven
           </h1>
         </div>
         <p className="text-muted-foreground mb-6 text-sm leading-relaxed">

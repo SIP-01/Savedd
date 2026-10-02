@@ -235,11 +235,11 @@ export const SAVEDD_PROFILE: CommunityEngineProfile = {
       defaultTab: 'web',
     },
     navLinks: [
-      { to: '/goodbye', label: 'A Peaceful Goodbye' },
+      { to: '/heaven', label: 'Heaven' },
       { to: '/about', label: 'About' },
     ],
     footerLinks: [
-      { to: '/goodbye', label: 'A Peaceful Goodbye' },
+      { to: '/heaven', label: 'Heaven' },
       { to: '/about', label: 'About' },
       { to: '/partners', label: 'Invite friends' },
       { to: '/settings', label: 'Settings' },

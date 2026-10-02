@@ -8,14 +8,23 @@
  *   POST /api/ai/admin             → NIP-98-signed config writes (owner key only, KV)
  *   GET  /api/search/brave/status  → whether engine Brave is configured
  *   POST /api/search/brave         → Brave Search proxy, key injected here
+ *   …
+ *   "Heaven" memorial videos:
+ *   POST /api/heaven/generate      → submit photos + fields, start Grok Imagine job
+ *   GET  /api/heaven/status/:id    → poll/advance job; videoUrl is an xAI CDN link
+ *   GET  /api/heaven/:id/video     → 302 to xAI CDN (or R2 copy for legacy jobs)
+ *   GET  /heaven/:id               → share page with OG/Twitter video tags
+ *   (/api/goodbye/* kept as legacy aliases)
  *
  * Operator configuration (nothing secret in the repo):
  *   wrangler secret put OPENAI_API_KEY        ← OpenAI (or compatible) key
  *     (legacy alias: AI_API_KEY is also accepted)
  *   wrangler secret put BRAVE_API_KEY         ← Brave Search subscription token
+ *   wrangler secret put XAI_API_KEY           ← xAI (Grok Imagine) key
  *   AI_PROVIDER_ENDPOINT / AI_MODEL / AI_PROVIDER_NAME / AI_ENGINE_ENABLED (vars)
  *   OWNER_PUBKEY (var, hex)                   ← enables the Admin → AI tab
  *   AI_CONFIG_KV (KV binding, optional)       ← enables admin-UI-managed config
+ *   HOMEGOING_JOBS (KV) + HOMEGOING_BUCKET (R2) ← Heaven video jobs/photos
  *
  * KV config wins over env vars. Neither present → status reports
  * "not configured" and chat returns 503 — fresh clones stay fully
@@ -279,7 +288,7 @@ async function proxyBrave(request: Request, env: Env): Promise<Response> {
 }
 
 /**
- * "A Peaceful Goodbye" — memorial video generation (grok-imagine-video-1.5
+ * "Heaven" — memorial video generation (grok-imagine-video-1.5
  * reference-to-video). Photos arrive as multipart uploads, are stored in R2
  * under a random job id, and are handed to xAI as reference URLs. The xAI
  * key is injected here; browsers only ever see our own job ids and URLs.
@@ -331,7 +340,27 @@ async function handleGoodbyeMeta(request: Request, env: Env, id: string): Promis
   return json(publicMeta(job), 200, request);
 }
 
-/** Serve stored media: the finished video (public) and reference photos. */
+/**
+ * Serve a finished video. New jobs store only the xAI files-cdn URL — the
+ * bytes live on xAI's CDN, so we redirect there instead of proxying the MP4
+ * through the worker (that redirect is what keeps video traffic off our
+ * edge). Legacy jobs whose bytes are in R2 are still served directly.
+ */
+async function handleGoodbyeVideo(env: Env, id: string): Promise<Response> {
+  if (!env.HOMEGOING_JOBS) return new Response('Not found', { status: 404 });
+  const job = await readJob(env, id).catch(() => null);
+  if (job?.externalUrl) {
+    return new Response(null, {
+      status: 302,
+      headers: { Location: job.externalUrl, 'Cache-Control': 'public, max-age=300' },
+    });
+  }
+  if (!env.HOMEGOING_BUCKET) return new Response('Not found', { status: 404 });
+  const res = await serveStored(env, id, 'video.mp4').catch(() => null);
+  return res ?? new Response('Not found', { status: 404 });
+}
+
+/** Serve stored reference photos from R2. */
 async function handleGoodbyeMedia(env: Env, id: string, key: string): Promise<Response> {
   if (!env.HOMEGOING_BUCKET) return new Response('Not found', { status: 404 });
   const res = await serveStored(env, id, key).catch(() => null);
@@ -345,7 +374,7 @@ function escapeAttr(value: string): string {
 
 /**
  * Share-page HTML with Open Graph/Twitter video tags injected, so links to
- * /goodbye/:id unfurl with the video on social platforms. Crawlers get
+ * /heaven/:id unfurl with the video on social platforms. Crawlers get
  * meta tags; browsers get the same SPA as before.
  */
 async function serveGoodbyeSharePage(request: Request, env: Env, id: string): Promise<Response> {
@@ -354,20 +383,20 @@ async function serveGoodbyeSharePage(request: Request, env: Env, id: string): Pr
   const assetResponse = await env.ASSETS.fetch(new Request(new URL('/', request.url).toString(), request));
   if (!assetResponse.ok) return assetResponse;
 
-  let title = 'A Peaceful Goodbye — Savedd.com';
+  let title = 'Heaven — Savedd.com';
   let description = 'An imagined farewell. A picture of hope.';
 
   if (env.HOMEGOING_JOBS) {
     const job = await readJob(env, id).catch(() => null);
     if (job) {
       const who = job.meta.departedName || 'a loved one';
-      title = `A Peaceful Goodbye — for ${who} — Savedd.com`;
+      title = `Heaven — for ${who} — Savedd.com`;
       description = `An imagined tribute: ${who} says goodbye and walks with Jesus toward heaven. An imagined farewell, created on Savedd.com.`;
     }
   }
 
-  const pageUrl = `https://savedd.com/goodbye/${id}`;
-  const videoUrl = `https://savedd.com/api/goodbye/${id}/video`;
+  const pageUrl = `https://savedd.com/heaven/${id}`;
+  const videoUrl = `https://savedd.com/api/heaven/${id}/video`;
   const tags = [
     `<meta property="og:type" content="video.other" />`,
     `<meta property="og:title" content="${escapeAttr(title)}" />`,
@@ -421,35 +450,48 @@ export default {
         return proxyBrave(request, env);
       }
 
-      // "A Peaceful Goodbye" — memorial video generation.
-      if (url.pathname === '/api/goodbye/status' && request.method === 'GET') {
-        return json({ configured: homegoingConfigured(env) }, 200, request);
-      }
-      if (url.pathname === '/api/goodbye/generate' && request.method === 'POST') {
-        return handleGoodbyeGenerate(request, env);
-      }
-      const goodbyeStatus = url.pathname.match(/^\/api\/goodbye\/status\/([0-9a-f-]{36})$/i);
-      if (goodbyeStatus && request.method === 'GET') {
-        return handleGoodbyeStatus(request, env, goodbyeStatus[1]);
-      }
-      const goodbyeMedia = url.pathname.match(/^\/api\/goodbye\/([0-9a-f-]{36})\/(video|meta|ref\/\d+)$/i);
-      if (goodbyeMedia && request.method === 'GET') {
-        if (goodbyeMedia[2] === 'meta') return handleGoodbyeMeta(request, env, goodbyeMedia[1]);
-        const key = goodbyeMedia[2] === 'video' ? 'video.mp4' : null;
-        if (key) return handleGoodbyeMedia(env, goodbyeMedia[1], key);
-        // /api/goodbye/:id/ref/:n — resolve the stored extension
-        const n = goodbyeMedia[2].split('/')[1];
-        for (const ext of ['jpg', 'png', 'webp']) {
-          const res = await serveStored(env, goodbyeMedia[1], `ref-${n}.${ext}`).catch(() => null);
-          if (res) return res;
+      // "Heaven" (formerly "A Peaceful Goodbye") — memorial video generation.
+      // /api/heaven/* is canonical; /api/goodbye/* stays so links and jobs
+      // created before the rename keep working.
+      const heavenApi = url.pathname.match(/^\/api\/(heaven|goodbye)(\/.*)?$/);
+      if (heavenApi) {
+        const sub = heavenApi[2] ?? '';
+        if (sub === '/status' && request.method === 'GET') {
+          return json({ configured: homegoingConfigured(env) }, 200, request);
         }
-        return new Response('Not found', { status: 404 });
+        if (sub === '/generate' && request.method === 'POST') {
+          return handleGoodbyeGenerate(request, env);
+        }
+        const statusMatch = sub.match(/^\/status\/([0-9a-f-]{36})$/i);
+        if (statusMatch && request.method === 'GET') {
+          return handleGoodbyeStatus(request, env, statusMatch[1]);
+        }
+        const mediaMatch = sub.match(/^\/([0-9a-f-]{36})\/(video|meta|ref\/\d+)$/i);
+        if (mediaMatch && request.method === 'GET') {
+          if (mediaMatch[2] === 'meta') return handleGoodbyeMeta(request, env, mediaMatch[1]);
+          if (mediaMatch[2] === 'video') return handleGoodbyeVideo(env, mediaMatch[1]);
+          // /:id/ref/:n — resolve the stored extension
+          const n = mediaMatch[2].split('/')[1];
+          for (const ext of ['jpg', 'png', 'webp']) {
+            const res = await serveStored(env, mediaMatch[1], `ref-${n}.${ext}`).catch(() => null);
+            if (res) return res;
+          }
+          return new Response('Not found', { status: 404 });
+        }
       }
 
       // Share page: same SPA, but with OG/Twitter video tags injected for crawlers.
-      const goodbyeShare = url.pathname.match(/^\/goodbye\/([0-9a-f-]{36})$/i);
-      if (goodbyeShare && request.method === 'GET') {
-        return serveGoodbyeSharePage(request, env, goodbyeShare[1]);
+      // /goodbye/:id redirects to the canonical /heaven/:id.
+      const legacyShare = url.pathname.match(/^\/goodbye\/([0-9a-f-]{36})$/i);
+      if (legacyShare && request.method === 'GET') {
+        return new Response(null, {
+          status: 301,
+          headers: { Location: `/heaven/${legacyShare[1]}` },
+        });
+      }
+      const heavenShare = url.pathname.match(/^\/heaven\/([0-9a-f-]{36})$/i);
+      if (heavenShare && request.method === 'GET') {
+        return serveGoodbyeSharePage(request, env, heavenShare[1]);
       }
 
       // Everything else → static assets.

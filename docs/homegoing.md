@@ -1,4 +1,4 @@
-# A Peaceful Goodbye (Homegoing videos)
+# Heaven (Homegoing memorial videos, formerly "A Peaceful Goodbye")
 
 A wizard that helps a user create a short, silent memorial video: a departed
 loved one says goodbye to their family and walks hand-in-hand with Jesus
@@ -9,19 +9,23 @@ shareable introduction to Savedd.com.
 
 | Route | Purpose |
 |---|---|
-| `/goodbye` | The 5-step wizard (photos → family → their world → preview/consent → generating) |
-| `/goodbye/:id` | Public share page. The worker injects OG/Twitter video meta tags into the HTML so links unfurl on social platforms. |
+| `/heaven` | The 5-step wizard (photos → family → their world → preview/consent → generating) |
+| `/heaven/:id` | Public share page. The worker injects OG/Twitter video meta tags into the HTML so links unfurl on social platforms. |
+| `/goodbye`, `/goodbye/:id` | Legacy paths from before the rename — redirect to `/heaven…`. |
 
 ## API (worker.ts, same origin)
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/api/goodbye/status` | GET | `{ configured: boolean }` |
-| `/api/goodbye/generate` | POST | multipart: `fields` (JSON) + `departedPhotos[]` + `familyPhotos[]` → `{ id, status, … }` (202) |
-| `/api/goodbye/status/:id` | GET | Lazily advances the xAI job; returns public meta + `videoUrl` when done |
-| `/api/goodbye/:id/meta` | GET | Public share-page metadata |
-| `/api/goodbye/:id/video` | GET | The stored mp4 (immutable cache) |
-| `/api/goodbye/:id/ref/:n` | GET | Stored reference photos (fetched by xAI during generation) |
+| `/api/heaven/status` | GET | `{ configured: boolean }` |
+| `/api/heaven/generate` | POST | multipart: `fields` (JSON) + `departedPhotos[]` + `familyPhotos[]` → `{ id, status, … }` (always 202; failure state is in the body) |
+| `/api/heaven/status/:id` | GET | Lazily advances the xAI job; returns public meta + `videoUrl` when done |
+| `/api/heaven/:id/meta` | GET | Public share-page metadata |
+| `/api/heaven/:id/video` | GET | 302 → xAI CDN URL (or the R2-stored mp4 for legacy jobs) |
+| `/api/heaven/:id/ref/:n` | GET | Stored reference photos (fetched by xAI during generation) |
+
+`/api/goodbye/*` remains as a legacy alias for jobs/links created before the
+rename.
 
 ## Operator setup
 
@@ -40,15 +44,21 @@ Then uncomment the `HOMEGOING_JOBS` / `HOMEGOING_BUCKET` bindings in
 1. Photos are stored in R2 under a random job id.
 2. The fixed-story prompt is assembled in `src/lib/goodbye/homegoing.ts`
    (same validation client- and server-side). Reference images are passed to
-   xAI as our own URLs (`/api/goodbye/:id/ref/:n`).
+   xAI as our own URLs (`/api/heaven/:id/ref/:n`).
 3. `POST https://api.x.ai/v1/videos/generations` with
-   `model: grok-imagine-video-1.5`, `reference_images`, `duration`,
-   `aspect_ratio`, `resolution: 720p` → returns `request_id`.
-4. The client polls `/api/goodbye/status/:id` every 4 s; each poll performs
-   one `GET /v1/videos/{request_id}` upstream. On `done` the temporary xAI
-   video URL is downloaded into R2 **immediately** (xAI URLs expire).
-5. The share page plays the R2-stored copy; job records expire after 30 days
-   (KV TTL). R2 objects should get a lifecycle rule matching that.
+   `model: grok-imagine-video-1.5`, `reference_images` (as `{url}` structs),
+   `duration`, `aspect_ratio`, `resolution: 720p`, and
+   `storage_options: { filename, public_url: true }` → returns `request_id`.
+4. The client polls `/api/heaven/status/:id` every 4 s; each poll performs
+   one `GET /v1/videos/{request_id}` upstream. On `done` the permanent
+   `video.file_output.public_url` (files-cdn.x.ai) is stored on the job —
+   the video bytes stay on xAI's CDN and never transit Savedd's worker.
+   (Fallback: if no public URL was produced, the ephemeral vidgen.x.ai URL
+   is downloaded into R2 immediately before it expires.)
+5. `/api/heaven/:id/video` 302-redirects to the xAI CDN URL (legacy jobs
+   still serve the R2-stored copy). Job records expire after 30 days
+   (KV TTL); the xAI public URL stays alive until revoked, and the stored
+   `externalFileId` allows deleting the file via the xAI Files API.
 
 ## Guardrails
 
@@ -61,12 +71,16 @@ Then uncomment the `HOMEGOING_JOBS` / `HOMEGOING_BUCKET` bindings in
   clothing, faithful faces, and a small semi-transparent **Savedd.com**
   (two Ds) watermark bottom-center.
 - Per-IP rate limiting reuses the worker's existing limiter.
+- On upstream rejection, a redacted snippet (prompt and API key stripped)
+  is stored in `job.debug` for operator diagnosis via KV. Clients only see
+  the friendly message plus the upstream status code.
 
 ## Known limitations
 
 - The watermark is requested in the Imagine prompt, not burned in
   server-side (no ffmpeg in a Worker). If cropping becomes a problem,
-  re-encode with a burned watermark at storage time.
+  re-encode with a burned watermark at storage time — that requires
+  downloading the bytes once, which the R2 fallback path already shows.
 - Reference-to-video caps at 720p and (currently) up to 15 s; the wizard
   offers 8/10/12/15 s.
 - If identity drift on two reference photos is ever poor, the fallback is a

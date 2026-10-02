@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
 import { ScrollToTop } from "./components/ScrollToTop";
 import { DeepLinkHandler } from "./components/DeepLinkHandler";
 
@@ -27,6 +27,12 @@ import GoodbyeShare from "./pages/GoodbyeShare";
 import { NIP19Page } from "./pages/NIP19Page";
 import NotFound from "./pages/NotFound";
 
+/** /goodbye/:id → /heaven/:id (keeps pre-rename share links working). */
+const LegacyGoodbyeRedirect = () => {
+  const { id } = useParams();
+  return <Navigate to={`/heaven/${id}`} replace />;
+};
+
 export function AppRouter() {
   return (
     <BrowserRouter>
@@ -52,9 +58,12 @@ export function AppRouter() {
         <Route path="/community" element={<CommunityPage />} />
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/docs" element={<DocsPage />} />
-        {/* "A Peaceful Goodbye" — memorial video wizard + public share page */}
-        <Route path="/goodbye" element={<Goodbye />} />
-        <Route path="/goodbye/:id" element={<GoodbyeShare />} />
+        {/* "Heaven" — memorial video wizard + public share page */}
+        <Route path="/heaven" element={<Goodbye />} />
+        <Route path="/heaven/:id" element={<GoodbyeShare />} />
+        {/* Legacy paths from before the rename */}
+        <Route path="/goodbye" element={<Navigate to="/heaven" replace />} />
+        <Route path="/goodbye/:id" element={<LegacyGoodbyeRedirect />} />
         {/* Hidden owner console — not linked in any nav */}
         <Route path="/admin" element={<Admin />} />
         {/* Legacy: instance management moved into Settings */}

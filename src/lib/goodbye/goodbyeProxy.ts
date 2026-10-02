@@ -1,20 +1,24 @@
 /**
  * Homegoing video generation — shared worker logic.
  *
- * Testable-without-a-server pieces of the "A Peaceful Goodbye" backend.
+ * Testable-without-a-server pieces of the "Heaven" backend.
  * `worker.ts` is a thin HTTP shell over these functions.
  *
  * Flow:
- *   1. POST /api/goodbye/generate (multipart: photos + JSON fields)
+ *   1. POST /api/heaven/generate (multipart: photos + JSON fields)
  *      → validate, store reference photos in R2, build the fixed-story
- *      prompt, submit reference-to-video to xAI, persist job in KV.
- *   2. GET  /api/goodbye/status/:id (client polls every few seconds)
+ *      prompt, submit reference-to-video to xAI (with storage_options so
+ *      the result lands on xAI's public CDN), persist job in KV.
+ *   2. GET  /api/heaven/status/:id (client polls every few seconds)
  *      → lazily advances the xAI job: one status call upstream per poll;
- *      when xAI reports "done" the temporary video URL is downloaded
- *      immediately into R2 (xAI URLs expire) and the job flips to done.
- *   3. GET  /api/goodbye/:id/video   → stream the stored mp4 from R2.
- *   4. GET  /api/goodbye/:id/meta    → public share-page metadata from KV.
- *   5. GET  /api/goodbye/:id/ref/:n  → reference photos for xAI to fetch.
+ *      when xAI reports "done" the public files-cdn.x.ai URL is stored on
+ *      the job and the job flips to done — video bytes stay on xAI.
+ *   3. GET  /api/heaven/:id/video   → 302 to the xAI CDN URL (legacy jobs
+ *      whose bytes are in R2 are still served directly).
+ *   4. GET  /api/heaven/:id/meta    → public share-page metadata from KV.
+ *   5. GET  /api/heaven/:id/ref/:n  → reference photos for xAI to fetch.
+ *
+ * /api/goodbye/* remains as a legacy alias for pre-rename links.
  *
  * Security invariants:
  *   - XAI_API_KEY is read from env only, injected server-side, never
@@ -24,8 +28,9 @@
  *     in the server-side job record (never sent to clients).
  *   - Photos are stored under the random job id; nothing is addressable
  *     by user-supplied names.
- *   - Video bytes are capped while downloading so a hostile or broken
- *     upstream cannot exhaust worker memory.
+ *   - Video bytes are hosted on xAI's CDN (storage_options.public_url);
+ *     the R2 download path is a fallback only, and is capped while
+ *     downloading so a hostile or broken upstream cannot exhaust memory.
  */
 import {
   HOMEGOING_MODEL,
@@ -160,7 +165,7 @@ export async function startGeneration(
     await bucket.put(key, await photos[i].arrayBuffer(), {
       httpMetadata: { contentType: photos[i].type },
     });
-    referenceUrls.push(`${origin}/api/goodbye/${id}/ref/${i}`);
+    referenceUrls.push(`${origin}/api/heaven/${id}/ref/${i}`);
   }
 
   const prompt = buildHomegoingPrompt(input, departedCount, photos.length - departedCount);
@@ -196,6 +201,14 @@ export async function startGeneration(
       duration: input.duration,
       aspect_ratio: input.aspectRatio,
       resolution: HOMEGOING_RESOLUTION,
+      // Persist the finished MP4 on xAI's own storage with a public CDN
+      // link. The video bytes then live on files-cdn.x.ai — Savedd only
+      // keeps the URL, so the worker never shuttles multi-MB videos
+      // through R2 (the old path doubled our bandwidth per view).
+      storage_options: {
+        filename: `heaven-${id}.mp4`,
+        public_url: true,
+      },
     }),
     signal: AbortSignal.timeout(XAI_TIMEOUT_MS),
   }).catch(() => null);
@@ -255,8 +268,9 @@ async function writeJob(env: HomegoingEnv, job: HomegoingJob): Promise<void> {
 
 /**
  * Advance a processing job by polling xAI once. When the upstream video is
- * ready it is downloaded into R2 immediately (xAI URLs are temporary) and
- * the job flips to done. Returns the (possibly updated) job.
+ * ready, its permanent files-cdn.x.ai URL (from storage_options.public_url)
+ * is stored on the job and the job flips to done — the bytes stay on xAI.
+ * Falls back to downloading into R2 when no public URL was produced.
  */
 export async function advanceJob(env: HomegoingEnv, job: HomegoingJob): Promise<HomegoingJob> {
   if (job.status !== 'processing' || !job.requestId) return job;
@@ -278,7 +292,10 @@ export async function advanceJob(env: HomegoingEnv, job: HomegoingJob): Promise<
 
   const data = (await res.json()) as {
     status?: string;
-    video?: { url?: string };
+    video?: {
+      url?: string;
+      file_output?: { public_url?: string; file_id?: string; public_url_error?: string };
+    };
   };
 
   if (data.status === 'failed' || data.status === 'expired') {
@@ -290,7 +307,22 @@ export async function advanceJob(env: HomegoingEnv, job: HomegoingJob): Promise<
 
   if (data.status !== 'done' || !data.video?.url) return job; // still pending
 
-  // Download immediately — the xAI URL expires.
+  // Preferred path: the job was submitted with storage_options.public_url,
+  // so xAI hands us a stable, unauthenticated files-cdn.x.ai URL nested in
+  // video.file_output. Store the URL only — the bytes never touch Savedd
+  // (no R2 put, no egress through the worker on every view). The default
+  // vidgen.x.ai URL is ephemeral, so only trust files-cdn links as permanent.
+  const cdnUrl = data.video.file_output?.public_url;
+  if (typeof cdnUrl === 'string' && cdnUrl.startsWith('https://files-cdn.x.ai/')) {
+    job.status = 'done';
+    job.externalUrl = cdnUrl;
+    if (data.video.file_output?.file_id) job.externalFileId = data.video.file_output.file_id;
+    await writeJob(env, job);
+    return job;
+  }
+
+  // Fallback (xAI returned only an ephemeral URL): download immediately
+  // into R2 before it expires.
   const video = await fetch(data.video.url, { signal: AbortSignal.timeout(120_000) }).catch(
     () => null,
   );
@@ -312,7 +344,7 @@ export async function advanceJob(env: HomegoingEnv, job: HomegoingJob): Promise<
   });
 
   job.status = 'done';
-  job.videoPath = `/api/goodbye/${job.id}/video`;
+  job.videoPath = `/api/heaven/${job.id}/video`;
   await writeJob(env, job);
   return job;
 }
@@ -391,7 +423,7 @@ export function publicMeta(job: HomegoingJob): Record<string, unknown> {
     aspectRatio: job.meta.aspectRatio,
     duration: job.meta.duration,
     createdAt: job.meta.createdAt,
-    videoUrl: job.status === 'done' ? job.videoPath : undefined,
+    videoUrl: job.status === 'done' ? (job.externalUrl ?? job.videoPath) : undefined,
     error: job.status === 'failed' && job.error ? { message: job.error } : undefined,
   };
 }
