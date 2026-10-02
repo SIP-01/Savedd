@@ -235,11 +235,11 @@ export const SAVEDD_PROFILE: CommunityEngineProfile = {
       defaultTab: 'web',
     },
     navLinks: [
-      { to: '/goodbye', label: 'A Peaceful Goodbye' },
+      { to: '/heaven', label: 'Heaven' },
       { to: '/about', label: 'About' },
     ],
     footerLinks: [
-      { to: '/goodbye', label: 'A Peaceful Goodbye' },
+      { to: '/heaven', label: 'Heaven' },
       { to: '/about', label: 'About' },
       { to: '/partners', label: 'Invite friends' },
       { to: '/settings', label: 'Settings' },
@@ -263,4 +263,4 @@ export const SAVEDD_PROFILE: CommunityEngineProfile = {
  * Swap this constant (or load from a catalog) to launch the next community
  * engine on the same core. Do not scatter brand strings through the app.
  */
-export const ENGINE_PROFILE: CommunityEngineProfile = SAVEDD_PROFILE;
+export const ACTIVE_PROFILE = SAVEDD_PROFILE;
