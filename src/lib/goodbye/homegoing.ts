@@ -1,5 +1,5 @@
 /**
- * "A Peaceful Goodbye" (internal name: Homegoing) — shared core.
+ * "Heaven" (internal name: Homegoing, formerly "A Peaceful Goodbye") — shared core.
  *
  * This module holds every piece of the homegoing-video feature that is
  * testable without a server runtime: input validation, sanitization, and
@@ -218,8 +218,12 @@ export interface HomegoingJob {
   status: HomegoingJobStatus;
   /** xAI request_id once submitted. */
   requestId?: string;
-  /** Public path of the stored video once done, e.g. /api/goodbye/<id>/video */
+  /** Public path of the stored video once done, e.g. /api/heaven/<id>/video (legacy R2-hosted jobs). */
   videoPath?: string;
+  /** xAI-hosted public CDN URL (files-cdn.x.ai) once done — preferred; bytes stay on xAI. */
+  externalUrl?: string;
+  /** xAI Files API id of the stored video — needed to revoke/delete it later. */
+  externalFileId?: string;
   error?: string;
   /** Redacted upstream error snippet for operator debugging (never sent to clients). */
   debug?: string;
