@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef, useTransition } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useSeoMeta } from '@unhead/react';
 import { Search, Network, ExternalLink, Gem, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -54,28 +54,32 @@ const Index = () => {
   const [activeQuery, setActiveQuery] = useState(initialQuery);
   const [source, setSource] = useState<SourceTabValue>(initialSource);
   const [stakeOpen, setStakeOpen] = useState(false);
+  // Lets the hero keep the typed query and show a button spinner while the
+  // heavier results view renders, instead of blanking the field first.
+  const [isSearchPending, startSearchTransition] = useTransition();
 
   const hasSearched = activeQuery.length > 0;
 
   // Global hotkeys: Ctrl+K / Cmd+K and "/" focus the search bar.
   useSearchHotkeys();
 
-  // URL → state sync: the `q` param is the source of truth for the ACTIVE
-  // search. Clicking the logo (a bare "/") clears the bar back to the hero
-  // view; browser back/forward revisits earlier searches. Typing never
-  // touches the URL — only submission sets it — so this can't fight input.
+  // URL → state sync. Only when the `q` param itself changes (logo click,
+  // back/forward, a shared link). Done during render — not an effect — so
+  // submitting can set the active query before the router commits the new
+  // URL without this sync wiping the field back to the stale empty param.
   const paramQuery = searchParams.get('q') || '';
-  useEffect(() => {
-    if (paramQuery === activeQuery) return;
+  const [trackedParamQuery, setTrackedParamQuery] = useState(paramQuery);
+  if (paramQuery !== trackedParamQuery) {
+    setTrackedParamQuery(paramQuery);
     setQuery(paramQuery);
     setActiveQuery(paramQuery);
     if (!paramQuery) {
-      // Bare home: also reset the tab to the configured default and start
-      // at the top — a fresh visit state, not a scrolled-down results page.
       setSource(KNOWN_TAB_IDS.has(storedDefault) ? (storedDefault as SourceTabValue) : 'web');
-      window.scrollTo(0, 0);
     }
-  }, [paramQuery, activeQuery, storedDefault]);
+  }
+  useEffect(() => {
+    if (!paramQuery) window.scrollTo(0, 0);
+  }, [paramQuery]);
 
   // Map SourceTabValue to provider search source.
   // 'i2p' has no provider — it shows directory links only.
@@ -126,13 +130,16 @@ const Index = () => {
 
   const totalResults = organicResults.length;
 
-  // Pagination — reset to page 1 on a new query or tab, scroll back to the
-  // top of the results on every page change.
+  // Pagination — back to page 1 on a new query or tab. Adjusted during
+  // render so a results update doesn't wait on an effect.
   const [page, setPage] = useState(1);
   const resultsTopRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
+  const pageKey = `${activeQuery}\0${source}`;
+  const [trackedPageKey, setTrackedPageKey] = useState(pageKey);
+  if (pageKey !== trackedPageKey) {
+    setTrackedPageKey(pageKey);
     setPage(1);
-  }, [activeQuery, source]);
+  }
 
   const pageCount = Math.max(1, Math.ceil(totalResults / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
@@ -164,11 +171,17 @@ const Index = () => {
   });
 
   const handleSubmit = useCallback((value: string) => {
-    setActiveQuery(value);
-    setSearchParams((prev) => {
-      prev.set('q', value);
-      prev.set('source', source);
-      return prev;
+    // Keep the text on screen immediately. The results view (and the URL)
+    // can lag a heavy render — defer that so the hero can show a spinner
+    // instead of looking like Enter did nothing.
+    setQuery(value);
+    startSearchTransition(() => {
+      setActiveQuery(value);
+      setSearchParams((prev) => {
+        prev.set('q', value);
+        prev.set('source', source);
+        return prev;
+      });
     });
   }, [source, setSearchParams]);
 
@@ -216,7 +229,7 @@ const Index = () => {
             </p>
           </div>
 
-          <div className="w-full max-w-2xl mb-6 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-500 motion-safe:delay-200">
+          <div className="w-full max-w-2xl mb-4 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-500 motion-safe:delay-200">
             {/* Autofocus only on the top-level page. Inside an iframe embed
                 (e.g. the Shakespeare preview), browsers restore focus to the
                 last-focused element when tabbing back into the frame — an
@@ -227,9 +240,14 @@ const Index = () => {
               value={query}
               onChange={setQuery}
               onSubmit={handleSubmit}
+              isLoading={isSearchPending}
               size="large"
               autoFocus={typeof window !== 'undefined' && window.self === window.top}
             />
+          </div>
+
+          <div className="mb-6 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-500 motion-safe:delay-300">
+            <SourceTabs value={source} onChange={handleSourceChange} />
           </div>
 
           {ENGINE_PROFILE.ui.biblicalQuotes && (
@@ -237,10 +255,6 @@ const Index = () => {
               <ScriptureVerse />
             </div>
           )}
-
-          <div className="motion-safe:animate-in motion-safe:fade-in motion-safe:duration-500 motion-safe:delay-300">
-            <SourceTabs value={source} onChange={handleSourceChange} />
-          </div>
 
           <div className="mt-6 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-500 motion-safe:delay-500">
             <PrivacyIndicator source={providerSource as SearchSource | 'all'} />
@@ -269,7 +283,7 @@ const Index = () => {
             value={query}
             onChange={setQuery}
             onSubmit={handleSubmit}
-            isLoading={isFetching}
+            isLoading={isFetching || isSearchPending}
           />
           {/* How the engine understood the query — phrases, boolean, filters */}
           <QueryInsights query={activeQuery} className="mt-2" />

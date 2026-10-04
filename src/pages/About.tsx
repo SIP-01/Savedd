@@ -139,15 +139,6 @@ export default function About() {
             </a>
             {' · '}
             <Link to="/settings" className="text-primary hover:underline">Settings</Link>
-            {' · '}
-            <a
-              href="https://shakespeare.diy"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-primary hover:underline"
-            >
-              Vibed with Shakespeare
-            </a>
           </p>
         </section>
       </div>

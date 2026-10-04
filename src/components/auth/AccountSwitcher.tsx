@@ -1,4 +1,4 @@
-import { ChevronDown, LogOut, ShieldCheck, UserIcon, UserPlus } from 'lucide-react';
+import { ChevronDown, LogOut, Settings, ShieldCheck, UserIcon, UserPlus } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { nip19 } from 'nostr-tools';
 import {
@@ -109,6 +109,12 @@ export function AccountSwitcher({ onAddAccountClick }: AccountSwitcherProps) {
           );
         })}
         <DropdownMenuSeparator />
+        <DropdownMenuItem asChild className='flex items-center gap-2 cursor-pointer p-2 rounded-md'>
+          <Link to="/settings">
+            <Settings className='w-4 h-4' />
+            <span>Settings</span>
+          </Link>
+        </DropdownMenuItem>
         {isMod && (
           <DropdownMenuItem asChild className='flex items-center gap-2 cursor-pointer p-2 rounded-md text-primary'>
             <Link to="/admin">

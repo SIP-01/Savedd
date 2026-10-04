@@ -84,6 +84,23 @@ export function AppProvider(props: AppProviderProps) {
             (parsed as { theme: unknown }).theme = 'dark';
           }
         }
+        // Previous SAVEDD default showed the Index tab, which wrapped the
+        // home tab bar onto two lines on a phone. Fold Index into that
+        // exact default hidden-list only — a customized list is kept.
+        if (parsed && typeof parsed === 'object' && 'tabConfig' in parsed) {
+          const tabConfig = (parsed as { tabConfig?: { hidden?: unknown } }).tabConfig;
+          const hidden = tabConfig?.hidden;
+          const previousDefault = ['all', 'nostr', 'wiki', 'news', 'code', 'tor', 'i2p'];
+          if (
+            tabConfig &&
+            Array.isArray(hidden) &&
+            hidden.length === previousDefault.length &&
+            previousDefault.every((id) => (hidden as string[]).includes(id)) &&
+            !(hidden as string[]).includes('index')
+          ) {
+            tabConfig.hidden = [...(hidden as string[]), 'index'];
+          }
+        }
         return AppConfigSchema.partial().parse(parsed);
       }
     }
