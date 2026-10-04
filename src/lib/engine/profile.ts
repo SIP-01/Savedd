@@ -231,7 +231,9 @@ export const SAVEDD_PROFILE: CommunityEngineProfile = {
     biblicalQuotes: true,
     tabConfig: {
       order: ['web', 'index', 'all', 'nostr', 'wiki', 'news', 'code', 'tor', 'i2p'],
-      hidden: ['all', 'nostr', 'wiki', 'news', 'code', 'tor', 'i2p'],
+      // Index is off so Web + the external shortcuts fit on one phone line.
+      // Anyone can turn it back on in Settings → Search Tabs.
+      hidden: ['index', 'all', 'nostr', 'wiki', 'news', 'code', 'tor', 'i2p'],
       defaultTab: 'web',
     },
     navLinks: [

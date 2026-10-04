@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { PlusCircle, Menu } from 'lucide-react';
+import { Bookmark, Heart, Info, Menu, PlusCircle, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { LoginArea } from '@/components/auth/LoginArea';
@@ -25,14 +25,25 @@ export function Layout({ children, minimal = false }: LayoutProps) {
   const { user } = useCurrentUser();
 
   // Bookmarks belong to the logged-in account — only surface the entry
-  // point when there is one.
+  // point when there is one. Search is the logo. Settings lives in the
+  // account menu. Content Policy stays in the footer only.
   const showBookmarks = engine.ui.showLogin && !!user;
 
+  const menuIcon: Record<string, React.ReactNode> = {
+    '/heaven': <Heart className="w-4 h-4" />,
+    '/about': <Info className="w-4 h-4" />,
+    '/bookmarks': <Bookmark className="w-4 h-4" />,
+    '/partners': <UserPlus className="w-4 h-4" />,
+  };
+
   const mobileLinks = [
-    { to: '/', label: 'Search' },
     ...engine.ui.navLinks,
     ...(showBookmarks ? [{ to: '/bookmarks', label: 'Bookmarks' }] : []),
-    ...engine.ui.footerLinks.filter((l) => !engine.ui.navLinks.some((n) => n.to === l.to)),
+    ...engine.ui.footerLinks.filter((l) =>
+      l.to !== '/settings' &&
+      l.to !== '/policy' &&
+      !engine.ui.navLinks.some((n) => n.to === l.to),
+    ),
   ];
 
   return (
@@ -99,11 +110,12 @@ export function Layout({ children, minimal = false }: LayoutProps) {
                       to={link.to}
                       onClick={() => setMenuOpen(false)}
                       className={cn(
-                        'px-3 py-2.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors',
+                        'flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors',
                         (link.to === '/' ? location.pathname === '/' : location.pathname.startsWith(link.to)) &&
                           'text-foreground bg-accent/50 font-medium',
                       )}
                     >
+                      {menuIcon[link.to]}
                       {link.label}
                     </Link>
                   ))}
@@ -131,14 +143,6 @@ export function Layout({ children, minimal = false }: LayoutProps) {
                 {link.label}
               </Link>
             ))}
-            <a
-              href="https://shakespeare.diy"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-foreground transition-colors"
-            >
-              Vibed with Shakespeare
-            </a>
           </div>
         </div>
       </footer>
