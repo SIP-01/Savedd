@@ -37,9 +37,11 @@ const GoodbyeShare = () => {
   const shareUrl = `https://savedd.com/heaven/${id}`;
   const who = meta?.departedName || 'a loved one';
 
+  const shareTitle = `${who === 'a loved one' ? 'A loved one' : who} going home — a vision of hope`;
+
   useSeoMeta({
-    title: `Heaven — for ${who} — Savedd.com`,
-    description: 'An imagined farewell. A picture of hope.',
+    title: `${shareTitle} — Savedd.com`,
+    description: 'An imagined tribute video created with AI.',
   });
 
   useEffect(() => {
@@ -83,7 +85,7 @@ const GoodbyeShare = () => {
     }
   };
 
-  const shareText = encodeURIComponent('An imagined farewell. A picture of hope.');
+  const shareText = encodeURIComponent(shareTitle);
   const encodedUrl = encodeURIComponent(shareUrl);
 
   return (
@@ -133,11 +135,8 @@ const GoodbyeShare = () => {
           <div className="space-y-6">
             <div className="text-center space-y-1">
               <h1 className="text-2xl sm:text-3xl font-display font-semibold tracking-tight">
-                Heaven
+                {shareTitle}
               </h1>
-              <p className="text-sm text-muted-foreground">
-                For {who} — an imagined tribute, a picture of hope.
-              </p>
             </div>
 
             <Card className="overflow-hidden border-primary/20">
@@ -155,8 +154,7 @@ const GoodbyeShare = () => {
             </Card>
 
             <p className="text-[11px] text-muted-foreground/70 leading-relaxed text-center">
-              An imagined tribute created with AI — not a recording of real events,
-              a vision, or a prophecy.
+              An imagined tribute video created with AI.
             </p>
 
             {/* Share */}
