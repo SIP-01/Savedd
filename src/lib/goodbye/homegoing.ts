@@ -174,7 +174,7 @@ export function buildHomegoingPrompt(
     '1. The departed and their loved ones share a loving, tearful embrace in the setting. Faces are close. The love is visible. Movement is slow.',
     '2. Jesus approaches quietly from the light. He looks the remaining family in the eyes. They are reassured — grief mixed with peace, not panic.',
     '3. The departed looks back, bids a silent tearful goodbye, then turns and walks side by side with Jesus, hand in hand.',
-    '4. They walk upward into a beautiful open sky toward heaven: soft clouds, warm rays, a sense of being welcomed. The family remains behind, watching with love.',
+    '4. They walk upward into a beautiful open sky toward heaven: soft clouds, warm rays, a sense of being welcomed. The family remains behind, watching with love, facing toward their departing loved one, not toward the \'camera\'.',
     '',
     'STYLE:',
     '- No speaking. No lip movement that looks like speech.',
@@ -182,9 +182,10 @@ export function buildHomegoingPrompt(
     '- Modest clothing. Remove or ignore graphics on shirts from the source photos.',
     '- Jesus should never look cartoonish, menacing, or celebrity-like.',
     '- End on the two figures walking into the light, family watching from below.',
+    '- Fade music out so it isn\'t cut off abruptly at the end.',
     '',
     'WATERMARK:',
-    `Small, tasteful, semi-transparent "${WATERMARK_TEXT}" in the bottom center. Two Ds. Do not cover faces.`,
+    'Small, tasteful, semi-transparent "SAVEDD.COM" in the bottom center. Two Ds. Do not cover faces.',
   ]
     .filter((line): line is string => line !== null)
     .join('\n');
