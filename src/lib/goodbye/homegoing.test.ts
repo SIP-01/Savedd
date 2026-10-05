@@ -80,7 +80,8 @@ describe('buildHomegoingPrompt', () => {
     expect(prompt).toContain('silent tearful goodbye');
     expect(prompt).toContain('hand in hand');
     expect(prompt).toContain('toward heaven');
-    expect(prompt).toContain('not toward the \'camera\'');
+    expect(prompt).toContain('follows them as they walk off');
+    expect(prompt).toContain('do not look at the camera');
     expect(prompt).toContain('one last time');
     expect(prompt).toContain('stay solemn');
     expect(prompt).toContain('Fade music out');
@@ -95,9 +96,10 @@ describe('buildHomegoingPrompt', () => {
     expect(prompt).toContain('Modest clothing');
   });
 
-  it('watermark is Savedd.com with two Ds, bottom center', () => {
-    expect(WATERMARK_TEXT).toBe('Savedd.com');
-    expect(prompt).toContain('S-A-V-E-D-D, two Ds');
+  it('prints the watermark once', () => {
+    expect(WATERMARK_TEXT).toBe('SAVEDD.COM');
+    expect(prompt.split('SAVEDD.COM').length - 1).toBe(1);
+    expect(prompt).not.toContain('Savedd.com');
     expect(prompt).toContain('bottom center');
   });
 
