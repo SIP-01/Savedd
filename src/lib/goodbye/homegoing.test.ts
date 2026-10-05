@@ -81,6 +81,8 @@ describe('buildHomegoingPrompt', () => {
     expect(prompt).toContain('hand in hand');
     expect(prompt).toContain('toward heaven');
     expect(prompt).toContain('not toward the \'camera\'');
+    expect(prompt).toContain('one last time');
+    expect(prompt).toContain('stay solemn');
     expect(prompt).toContain('Fade music out');
     expect(prompt).toContain('SAVEDD.COM');
   });
