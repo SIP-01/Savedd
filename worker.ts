@@ -388,8 +388,8 @@ async function serveGoodbyeSharePage(request: Request, env: Env, id: string): Pr
   const assetResponse = await env.ASSETS.fetch(shellUrl);
   if (!assetResponse.ok) return assetResponse;
 
-  let title = 'Heaven — Savedd.com';
-  let description = 'An imagined farewell. A picture of hope.';
+  let title = 'Going home — a vision of hope';
+  let description = 'An imagined tribute video created with AI.';
   let width = '720';
   let height = '1280';
 
@@ -397,8 +397,8 @@ async function serveGoodbyeSharePage(request: Request, env: Env, id: string): Pr
     const job = await readJob(env, id).catch(() => null);
     if (job) {
       const who = job.meta.departedName || 'a loved one';
-      title = `Heaven — for ${who} — Savedd.com`;
-      description = `An imagined tribute: ${who} says goodbye and walks with Jesus toward heaven. An imagined farewell, created on Savedd.com.`;
+      title = `${who === 'a loved one' ? 'A loved one' : who} going home — a vision of hope`;
+      description = 'An imagined tribute video created with AI.';
       if (job.meta.aspectRatio === '16:9') {
         width = '1280';
         height = '720';
