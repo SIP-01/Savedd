@@ -380,11 +380,18 @@ function escapeAttr(value: string): string {
 async function serveGoodbyeSharePage(request: Request, env: Env, id: string): Promise<Response> {
   if (!env.ASSETS) return new Response('Not found', { status: 404 });
 
-  const assetResponse = await env.ASSETS.fetch(new Request(new URL('/', request.url).toString(), request));
+  // Fetch the current SPA shell by pathname only. Cloning the incoming
+  // request makes the assets binding reuse /heaven/:id's cached SPA-fallback
+  // HTML, which still points at a JS bundle from the previous deploy. That
+  // bundle 404s, React never starts, and the static splash stays on screen.
+  const shellUrl = new URL('/', request.url);
+  const assetResponse = await env.ASSETS.fetch(shellUrl);
   if (!assetResponse.ok) return assetResponse;
 
   let title = 'Heaven — Savedd.com';
   let description = 'An imagined farewell. A picture of hope.';
+  let width = '720';
+  let height = '1280';
 
   if (env.HOMEGOING_JOBS) {
     const job = await readJob(env, id).catch(() => null);
@@ -392,25 +399,55 @@ async function serveGoodbyeSharePage(request: Request, env: Env, id: string): Pr
       const who = job.meta.departedName || 'a loved one';
       title = `Heaven — for ${who} — Savedd.com`;
       description = `An imagined tribute: ${who} says goodbye and walks with Jesus toward heaven. An imagined farewell, created on Savedd.com.`;
+      if (job.meta.aspectRatio === '16:9') {
+        width = '1280';
+        height = '720';
+      }
     }
   }
 
   const pageUrl = `https://savedd.com/heaven/${id}`;
   const videoUrl = `https://savedd.com/api/heaven/${id}/video`;
   const tags = [
+    `<meta name="description" content="${escapeAttr(description)}" />`,
     `<meta property="og:type" content="video.other" />`,
     `<meta property="og:title" content="${escapeAttr(title)}" />`,
     `<meta property="og:description" content="${escapeAttr(description)}" />`,
     `<meta property="og:url" content="${pageUrl}" />`,
     `<meta property="og:video" content="${videoUrl}" />`,
+    `<meta property="og:video:secure_url" content="${videoUrl}" />`,
     `<meta property="og:video:type" content="video/mp4" />`,
+    `<meta property="og:video:width" content="${width}" />`,
+    `<meta property="og:video:height" content="${height}" />`,
     `<meta name="twitter:card" content="player" />`,
     `<meta name="twitter:title" content="${escapeAttr(title)}" />`,
     `<meta name="twitter:description" content="${escapeAttr(description)}" />`,
     `<meta name="twitter:player" content="${pageUrl}" />`,
+    `<meta name="twitter:player:width" content="${width}" />`,
+    `<meta name="twitter:player:height" content="${height}" />`,
   ].join('');
 
   const rewritten = new HTMLRewriter()
+    .on('title', {
+      element(el) {
+        el.setInnerContent(title);
+      },
+    })
+    .on('link', {
+      element(el) {
+        if (el.getAttribute('rel') === 'canonical') el.setAttribute('href', pageUrl);
+      },
+    })
+    .on('meta', {
+      element(el) {
+        const prop = (el.getAttribute('property') || '').toLowerCase();
+        const name = (el.getAttribute('name') || '').toLowerCase();
+        // Drop the homepage card so a shared link unfurls as this tribute.
+        if (prop.startsWith('og:') || name.startsWith('twitter:') || name === 'description') {
+          el.remove();
+        }
+      },
+    })
     .on('head', {
       element(el) {
         el.append(tags, { html: true });
@@ -420,6 +457,7 @@ async function serveGoodbyeSharePage(request: Request, env: Env, id: string): Pr
 
   const headers = new Headers(rewritten.headers);
   headers.set('Cache-Control', 'no-store');
+  headers.delete('ETag');
   return new Response(rewritten.body, { status: rewritten.status, headers });
 }
 
