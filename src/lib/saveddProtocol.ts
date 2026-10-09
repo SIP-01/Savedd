@@ -67,6 +67,8 @@ export const SAVEDD_PROTOCOL = {
   abuse: 'savedd.abuse',
   /** t-tag marker on role-list events. */
   rolesTag: 'savedd-roles',
+  /** t-tag on a trusted curated keyword result set (kind 30078). */
+  curatedTag: 'savedd-curated',
 } as const;
 
 /**
@@ -137,6 +139,8 @@ export const PERMISSIONS = {
   canManageReferralConfig: (role: SaveddRole): boolean => role === 'owner' || role === 'admin',
   canManageRoles: (role: SaveddRole): boolean => role === 'owner',
   canManageEngineConfig: (role: SaveddRole): boolean => role === 'owner',
+  /** Curated keyword result sets — the whole team, same as moderation. */
+  canCurate: (role: SaveddRole): boolean => role !== 'user',
 } as const;
 
 /* ------------------------------------------------------------------ */

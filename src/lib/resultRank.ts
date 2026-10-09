@@ -30,7 +30,7 @@ import { evaluateQuery, docFromSearchResult } from '@/lib/queryEngine';
 import type { SearchResult } from '@/lib/providers/types';
 
 /** Providers whose placement is contractual, not relevance-driven. */
-const RERANK_EXEMPT = new Set(['keyword-stake']);
+const RERANK_EXEMPT = new Set(['keyword-stake', 'curated']);
 
 /** Multiplier floor for results with zero word overlap (loose engine hits). */
 const NO_MATCH_FACTOR = 0.45;

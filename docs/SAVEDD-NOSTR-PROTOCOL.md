@@ -50,6 +50,7 @@ keep their names so the federation keeps working.
 | Affiliate rules | 30078 | `savedd:affiliate-rules` | Owner + admins |
 | Invite Friends config | 30078 | `savedd:referral-config` | Owner + admins |
 | Moderation labels | 1985 (NIP-32) | `savedd.moderation` | Owner + admins + moderators |
+| Curated keywords | 30078 | `savedd:curated:<keyword>` | Owner + admins + moderators |
 | Abuse reports | 1984 (NIP-56) | `savedd.abuse` | Anyone files → team reads |
 | Delete / un-hide | 5 (NIP-09) | — | The label's own author (team) |
 | Referral attribution ping | 34967 | `d`/`p` = inviter pubkey | Per-device analytics key |
@@ -83,6 +84,7 @@ config). A stranger publishing `d = savedd:admin-roles` gets ignored.
 | File an abuse report | ✅ | ✅ | ✅ | ✅ |
 | View / process reports | ✅ | ✅ | ✅ | ❌ |
 | Moderate (hide/unhide) results | ✅ | ✅ | ✅ | ❌ |
+| Publish a curated keyword result set | ✅ | ✅ | ✅ | ❌ |
 | Add / edit / remove + publish affiliate rules | ✅ | ✅ | ❌ | ❌ |
 | Manage Invite Friends config | ✅ | ✅ | ❌ | ❌ |
 | Manage admins / moderators | ✅ | ❌ | ❌ | ❌ |

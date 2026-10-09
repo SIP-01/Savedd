@@ -100,6 +100,7 @@ export function useSearchIndexer() {
           || result.provider === 'community'
           || result.provider === 'web-index'
           || result.provider === 'cached-index'
+          || result.provider === 'curated'
         ) {
           continue;
         }
