@@ -61,6 +61,7 @@ describe('SAVEDD protocol namespaces', () => {
     expect(SAVEDD_PROTOCOL.referralConfig).toBe('savedd:referral-config');
     expect(SAVEDD_PROTOCOL.moderation).toBe('savedd.moderation');
     expect(SAVEDD_PROTOCOL.abuse).toBe('savedd.abuse');
+    expect(SAVEDD_PROTOCOL.curatedTag).toBe('savedd-curated');
   });
 
   it('legacy namespaces stay frozen (read-only compatibility)', () => {

@@ -14,7 +14,7 @@ import { communityProvider } from './community';
 import { stakesProvider } from './stakes';
 import { searxngProvider } from './searxng';
 import { duckduckgoProvider } from './duckduckgo';
-import { braveProvider } from './brave';
+import { curatedProvider } from './curated';
 import { parallelProvider } from './parallel';
 import { torProvider } from './tor';
 import { wikipediaProvider } from './wikipedia';
@@ -34,6 +34,7 @@ import { nostrWikiProvider } from './wiki';
  * chips and result streaming, not speed.
  */
 export const ALL_PROVIDERS: SearchProvider[] = [
+  curatedProvider,
   braveProvider,
   parallelProvider,
   duckduckgoProvider,
@@ -57,7 +58,7 @@ export function getProvidersForSource(source: SearchSource | 'all' | 'index' | '
   if (source === 'i2p') return []; // directory links only, no providers
   // The Index tab = the community index only (SIP-01 observations + legacy cache).
   if (source === 'index') {
-    return ALL_PROVIDERS.filter((p) => p.id === 'web-index' || p.id === 'cached-index');
+    return ALL_PROVIDERS.filter((p) => p.id === 'web-index' || p.id === 'cached-index' || p.id === 'curated');
   }
   return ALL_PROVIDERS.filter((p) => p.source === source || p.additionalSources?.includes(source));
 }

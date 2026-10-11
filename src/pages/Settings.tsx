@@ -947,6 +947,7 @@ const ENGINE_META: Record<string, { icon: React.ReactNode; note: string }> = {
   'web-index': { icon: <Search className="w-4 h-4" />, note: 'The shared SIP-01 community web index (kind 39697)' },
   'cached-index': { icon: <Database className="w-4 h-4" />, note: 'Legacy federated query cache (kind 30078)' },
   'keyword-stakes': { icon: <Star className="w-4 h-4" />, note: 'Community keyword stakes — staked top placements' },
+  curated: { icon: <Star className="w-4 h-4" />, note: 'Curated keyword lists published by the Savedd team — these replace the open web for an exact search' },
   community: { icon: <Check className="w-4 h-4" />, note: 'User-curated submissions + NIP-B0 bookmarks' },
   nostr: { icon: <Zap className="w-4 h-4" />, note: 'NIP-50 full-text search: notes, articles, wiki, files, torrents, code' },
   wikipedia: { icon: <Globe className="w-4 h-4" />, note: 'Wikipedia articles (direct MediaWiki API)' },

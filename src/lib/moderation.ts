@@ -92,8 +92,6 @@ export const LEGACY_MOD_ROLES_D_TAG = LEGACY_PROTOCOL.moderatorRoles;
 /** @deprecated Alias kept for existing imports — new code uses SaveddRole. */
 export type AppRole = import('@/lib/saveddProtocol').SaveddRole;
 
-export type AppRole = 'owner' | 'admin' | 'moderator' | 'user';
-
 /** Parse a role list event. Owner signature enforced by the caller's filter. */
 export function parseRoleList(event: NostrEvent): string[] {
   if (event.kind !== ROLES_KIND) return [];

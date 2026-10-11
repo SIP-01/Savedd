@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useEffect, useRef, useTransition } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useSeoMeta } from '@unhead/react';
-import { Search, Network, ExternalLink, Gem, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Network, ExternalLink, Gem, ChevronLeft, ChevronRight, ListChecks } from 'lucide-react';
 
 import { Layout } from '@/components/Layout';
 import { LogoMark } from '@/components/LogoMark';
@@ -12,6 +12,7 @@ import { StakeResultCard } from '@/components/StakeResultCard';
 import { VoteTalliesProvider } from '@/components/VoteButtons';
 import { AIAnswerCard } from '@/components/AIAnswerCard';
 import { StakeKeywordDialog } from '@/components/StakeKeywordDialog';
+import { CurateKeywordDialog } from '@/components/CurateKeywordDialog';
 import { ProviderStatus } from '@/components/ProviderStatus';
 import { BrowserFallback } from '@/components/BrowserFallback';
 import { SearchSkeleton } from '@/components/SearchSkeleton';
@@ -27,6 +28,7 @@ import { useInstantAnswer } from '@/hooks/useInstantAnswer';
 import { useAIAnswer } from '@/hooks/useAIAnswer';
 import { useSearchHotkeys } from '@/hooks/useSearchHotkeys';
 import { useAppContext } from '@/hooks/useAppContext';
+import { useAdminAccess } from '@/hooks/useAdminAccess';
 import type { SearchSource } from '@/lib/providers/types';
 
 // Tabs that can actually be the ACTIVE source — external shortcut tabs
@@ -39,8 +41,15 @@ const KNOWN_TAB_IDS = new Set(ALL_SOURCE_TABS.filter((t) => !isExternalTab(t.id)
  *  slower providers resolve in the background. */
 const PAGE_SIZE = 10;
 
+/** Open-web providers a curated keyword replaces until the reader asks for them. */
+const REPLACED_BY_CURATION = new Set([
+  'brave', 'duckduckgo', 'searxng', 'parallel',
+  'web-index', 'cached-index', 'community', 'keyword-stake',
+]);
+
 const Index = () => {
   const { config } = useAppContext();
+  const { canModerate } = useAdminAccess();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialQuery = searchParams.get('q') || '';
   // URL param wins; otherwise the user's configured default tab (Web out of
@@ -54,6 +63,8 @@ const Index = () => {
   const [activeQuery, setActiveQuery] = useState(initialQuery);
   const [source, setSource] = useState<SourceTabValue>(initialSource);
   const [stakeOpen, setStakeOpen] = useState(false);
+  const [curateOpen, setCurateOpen] = useState(false);
+  const [showOpenWeb, setShowOpenWeb] = useState(false);
   // Lets the hero keep the typed query and show a button spinner while the
   // heavier results view renders, instead of blanking the field first.
   const [isSearchPending, startSearchTransition] = useTransition();
@@ -108,7 +119,7 @@ const Index = () => {
     if (source === 'i2p') return [];
     // The Index tab = community index only (SIP-01 observations + legacy cache).
     if (source === 'index') {
-      return results.filter((r) => r.provider === 'web-index' || r.provider === 'cached-index');
+      return results.filter((r) => r.provider === 'web-index' || r.provider === 'cached-index' || r.provider === 'curated');
     }
     // The Code tab also shows NIP-C0 snippets (they arrive as Nostr results
     // with kind 'Code') alongside Stack Overflow.
@@ -119,16 +130,35 @@ const Index = () => {
   }, [results, source]);
 
   // Keyword stakes get their own top-of-page placement (Presearch-style).
-  const stakeResults = useMemo(
-    () => filteredResults.filter((r) => r.provider === 'keyword-stake'),
+  // A trusted curated set replaces the open-web providers on Web / All / Index.
+  const curatedResults = useMemo(
+    () => filteredResults.filter((r) => r.provider === 'curated'),
     [filteredResults],
+  );
+  const hideOpenWeb = curatedResults.length > 0
+    && !showOpenWeb
+    && (source === 'web' || source === 'all' || source === 'index');
+  const stakeResults = useMemo(
+    () => (hideOpenWeb ? [] : filteredResults.filter((r) => r.provider === 'keyword-stake')),
+    [filteredResults, hideOpenWeb],
   );
   const organicResults = useMemo(
-    () => filteredResults.filter((r) => r.provider !== 'keyword-stake'),
-    [filteredResults],
+    () => filteredResults.filter((r) => {
+      if (r.provider === 'curated' || r.provider === 'keyword-stake') return false;
+      if (hideOpenWeb && REPLACED_BY_CURATION.has(r.provider)) return false;
+      return true;
+    }),
+    [filteredResults, hideOpenWeb],
   );
+  const curatedApplies = curatedResults.length > 0
+    && (source === 'web' || source === 'all' || source === 'index');
+  const listedResults = useMemo(() => {
+    if (!curatedApplies) return organicResults;
+    if (hideOpenWeb && source !== 'all') return curatedResults;
+    return [...curatedResults, ...organicResults];
+  }, [curatedApplies, hideOpenWeb, source, curatedResults, organicResults]);
 
-  const totalResults = organicResults.length;
+  const totalResults = listedResults.length;
 
   // Pagination — back to page 1 on a new query or tab. Adjusted during
   // render so a results update doesn't wait on an effect.
@@ -139,13 +169,14 @@ const Index = () => {
   if (pageKey !== trackedPageKey) {
     setTrackedPageKey(pageKey);
     setPage(1);
+    setShowOpenWeb(false);
   }
 
   const pageCount = Math.max(1, Math.ceil(totalResults / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
   const pagedResults = useMemo(
-    () => organicResults.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
-    [organicResults, currentPage],
+    () => listedResults.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
+    [listedResults, currentPage],
   );
 
   const goToPage = useCallback((p: number) => {
@@ -161,7 +192,7 @@ const Index = () => {
 
   // AI Answer layer — synthesizes from the search evidence (opt-in,
   // Settings → AI). Runs only for text-class queries with enough evidence.
-  const ai = useAIAnswer(activeQuery, organicResults, hasSearched && source !== 'i2p');
+  const ai = useAIAnswer(activeQuery, hideOpenWeb ? listedResults : organicResults, hasSearched && source !== 'i2p');
 
   useSeoMeta({
     title: hasSearched
@@ -371,6 +402,16 @@ const Index = () => {
                         Be the first to stake this keyword
                       </button>
                     )}
+                    {canModerate && (
+                      <button
+                        type="button"
+                        onClick={() => setCurateOpen(true)}
+                        className="inline-flex items-center gap-1.5 mt-5 text-xs text-primary/80 hover:text-primary transition-colors"
+                      >
+                        <ListChecks className="w-3 h-3" />
+                        Curate this search
+                      </button>
+                    )}
                   </CardContent>
                 </Card>
               )}
@@ -378,6 +419,20 @@ const Index = () => {
             </>
           ) : source !== 'i2p' && (
             <div className="space-y-3">
+              {curatedApplies && (
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm text-muted-foreground">
+                    Curated results for &ldquo;{activeQuery}&rdquo;.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowOpenWeb((open) => !open)}
+                    className="text-xs text-primary shrink-0"
+                  >
+                    {showOpenWeb ? 'Hide the open web' : 'Show the open web'}
+                  </button>
+                </div>
+              )}
               {/* Result count header + stake CTA */}
               {totalResults > 0 && (
                 <div ref={resultsTopRef} className="flex items-center justify-between gap-3 mb-1 scroll-mt-24">
@@ -398,6 +453,16 @@ const Index = () => {
                     >
                       <Gem className="w-3 h-3" />
                       Stake this keyword
+                    </button>
+                  )}
+                  {canModerate && (
+                    <button
+                      type="button"
+                      onClick={() => setCurateOpen(true)}
+                      className="inline-flex items-center gap-1.5 text-xs text-muted-foreground/70 hover:text-primary transition-colors shrink-0"
+                    >
+                      <ListChecks className="w-3 h-3" />
+                      Curate this search
                     </button>
                   )}
                 </div>
@@ -450,7 +515,7 @@ const Index = () => {
               )}
 
               {/* Browser fallback when sparse (or stakes-only) */}
-              {((totalResults > 0 && totalResults < 5) || (totalResults === 0 && stakeResults.length > 0 && !isLoading)) && source !== 'tor' && (
+              {((totalResults > 0 && totalResults < 5) || (totalResults === 0 && stakeResults.length > 0 && !isLoading)) && source !== 'tor' && !hideOpenWeb && (
                 <BrowserFallback query={activeQuery} className="mt-4" />
               )}
             </div>
@@ -466,6 +531,11 @@ const Index = () => {
           initialKeyword={activeQuery}
         />
       )}
+      <CurateKeywordDialog
+        open={curateOpen}
+        onOpenChange={setCurateOpen}
+        initialKeyword={activeQuery}
+      />
     </Layout>
   );
 };
