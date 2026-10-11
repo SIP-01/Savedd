@@ -14,7 +14,7 @@
  *     rewrite the plot.
  *   - Every prompt carries the guardrails: no speaking, no graves/
  *     coffins/illness, adult subjects, faithful faces, modest clothing,
- *     and the "Savedd.com" watermark spelled with two Ds.
+ *     and one "SAVEDD.COM" watermark, spelled with two Ds.
  *   - User text is length-capped and control-character-stripped so the
  *     wizard cannot be used to smuggle arbitrary instructions past the
  *     template.
@@ -34,8 +34,8 @@ export type HomegoingDuration = (typeof HOMEGOING_DURATIONS)[number];
 export const HOMEGOING_MODEL = 'grok-imagine-video-1.5';
 export const HOMEGOING_RESOLUTION = '720p';
 
-/** The fixed, user-facing watermark string. Two Ds. Do not "fix" the spelling. */
-export const WATERMARK_TEXT = 'Savedd.com';
+/** The only on-screen name. Mentioned once in the prompt so the model does not paint it twice. */
+export const WATERMARK_TEXT = 'SAVEDD.COM';
 
 /** Inputs collected by the wizard (photos are handled separately as files). */
 export interface HomegoingInput {
@@ -157,11 +157,11 @@ export function buildHomegoingPrompt(
   const detailsLine = input.details ? `Additional detail to honor: ${input.details}.` : null;
 
   return [
-    `Generate a solemn, peaceful, thoughtful, cinematic memorial video. No speaking, no captions, no subtitles, no on-screen text except a small tasteful ${WATERMARK_TEXT} watermark centered at the bottom (spelled S-A-V-E-D-D, two Ds). Photorealistic, gentle warm light, slow camera, quiet reverence. Do not add logos, slogans, or graphics on clothing. Do not depict injury, illness, a funeral, a grave, a coffin, or death itself. This is a farewell and homegoing, not a death scene. All people depicted are adults.`,
+    `Generate a solemn, peaceful, thoughtful, cinematic memorial video. No speaking, no captions, no subtitles, and no on-screen text except the single watermark named once at the end. Photorealistic, gentle warm light, slow camera, quiet reverence. Do not add logos, slogans, or graphics on clothing. Do not depict injury, illness, a funeral, a grave, a coffin, or death itself. This is a farewell and homegoing, not a death scene. All people depicted are adults.`,
     '',
     'CHARACTERS (match the reference photos closely: face, age, hair, skin tone, body type):',
     `- The departed: ${departed}${refLine(departedRefs)}.`,
-    `- Loved ones present: ${family}${refLine(familyRefs)}.`,
+    `- Loved ones present: ${family}${refLine(familyRefs)}. Each person who stays behind looks at their loved one and at Jesus, and follows them as they walk off. They do not look forward, and they do not look at the camera.`,
     '- Jesus Christ: traditional, recognizable, kind, luminous but not garish — long hair, beard, simple light-colored robe, warm eyes, gentle expression. He is comforting, not theatrical.',
     '',
     'SETTING:',
@@ -174,18 +174,18 @@ export function buildHomegoingPrompt(
     '1. The departed and their loved ones share a loving, tearful embrace in the setting. Faces are close. The love is visible. Movement is slow.',
     '2. Jesus approaches quietly from the light. He looks the remaining family in the eyes. They are reassured — grief mixed with peace, not panic.',
     '3. The departed looks back, bids a silent tearful goodbye, then turns and walks side by side with Jesus, hand in hand.',
-    '4. They walk upward into a beautiful open sky toward heaven: soft clouds, warm rays, a sense of being welcomed. As they ascend, the departed turns back to look at the family one last time. The family remains behind, facing toward their departing loved one, not toward the \'camera\'. They look solemn — quiet love and grief, not smiles — and they stay solemn even after their loved one has departed.',
+    '4. They walk upward into a beautiful open sky toward heaven: soft clouds, warm rays, a sense of being welcomed. As they ascend, the departed turns back to look at the family one last time. The family remains behind, facing toward their departing loved one and toward Jesus, not toward the \'camera\'. They follow the two with their eyes as they walk off, and they do not look forward. They look solemn — quiet love and grief, not smiles — and they stay solemn even after their loved one has departed.',
     '',
     'STYLE:',
     '- No speaking. No lip movement that looks like speech.',
     '- Keep faces faithful to the uploaded people. Do not swap identities. Do not age or de-age anyone except to match the photos.',
     '- Modest clothing. Remove or ignore graphics on shirts from the source photos.',
     '- Jesus should never look cartoonish, menacing, or celebrity-like.',
-    '- End on the two figures walking into the light. The departed glances back once more while ascending. The family watches from below, solemn, still facing their loved one after the departure.',
+    '- End on the two figures walking into the light. The departed glances back once more while ascending. Each person who stays behind looks at their loved one and at Jesus and follows them as they walk off. They do not look forward, and they do not look at the camera. They remain solemn after the departure.',
     '- Fade music out so it isn\'t cut off abruptly at the end.',
     '',
     'WATERMARK:',
-    'Small, tasteful, semi-transparent "SAVEDD.COM" in the bottom center. Two Ds. Do not cover faces.',
+    `Exactly one watermark in the entire video: small, tasteful, semi-transparent "${WATERMARK_TEXT}" in the bottom center. Two Ds. Do not cover faces. Do not add any other text.`,
   ]
     .filter((line): line is string => line !== null)
     .join('\n');
